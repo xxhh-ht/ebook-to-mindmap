@@ -1,21 +1,29 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
-import { ChevronUp } from 'lucide-react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Progress } from '@/components/ui/progress'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Textarea } from '@/components/ui/textarea'
+import { Upload, BookOpen, Brain, FileText, Loader2, Network, Trash2, List, ChevronUp, ArrowLeft, Download } from 'lucide-react'
 import { EpubProcessor, type ChapterData, type BookData as EpubBookData } from './services/epubProcessor'
 import { PdfProcessor, type BookData as PdfBookData } from './services/pdfProcessor'
 import { AIService } from './services/aiService'
 import { CacheService } from './services/cacheService'
+import { ConfigDialog } from './components/project/ConfigDialog'
 import type { MindElixirData, Options } from 'mind-elixir'
 import type { Summary } from 'node_modules/mind-elixir/dist/types/summary'
 import { LanguageSwitcher } from './components/LanguageSwitcher'
+import { MarkdownCard } from './components/MarkdownCard'
+import { MindMapCard } from './components/MindMapCard'
 import { EpubReader } from './components/EpubReader'
 import { PdfReader } from './components/PdfReader'
-import { Step1Upload } from './components/Step1Upload'
-import { Step2Results } from './components/Step2Results'
 import { toast } from 'sonner'
 import { Toaster } from '@/components/ui/sonner'
-import { scrollToTop } from './utils'
+import { scrollToTop, openInMindElixir, downloadMindMap } from './utils'
 
 
 const options = { direction: 1, alignment: 'nodes' } as Options
@@ -49,6 +57,10 @@ import { useAIConfig, useProcessingOptions, useConfigStore } from './stores/conf
 const cacheService = new CacheService()
 
 // 辅助函数：计算字符串大小（KB）
+function getStringSizeInKB(str: string): string {
+  const sizeInKB = new Blob([str]).size / 1024;
+  return sizeInKB.toFixed(1);
+}
 
 function App() {
   const { t } = useTranslation()
@@ -224,7 +236,6 @@ ${bookSummary.overallSummary}
       // 实时更新选中的章节缓存
       if (file) {
         cacheService.setSelectedChapters(file.name, newSet)
-        console.log('💾 [DEBUG] 实时更新选中的章节缓存:', newSet.size)
       }
 
       return newSet
@@ -679,68 +690,428 @@ ${bookSummary.overallSummary}
         </div>
 
         {currentStepIndex === 1 ? (
-          <Step1Upload
-            file={file}
-            processing={processing}
-            extractingChapters={extractingChapters}
-            extractedChapters={extractedChapters}
-            bookData={bookData}
-            selectedChapters={selectedChapters}
-            customPrompt={customPrompt}
-            apiKey={apiKey}
-            onFileChange={handleFileChange}
-            onExtractChapters={extractChapters}
-            onChapterSelect={handleChapterSelect}
-            onSelectAll={handleSelectAll}
-            onClearBookCache={clearBookCache}
-            onSetCurrentReadingChapter={setCurrentReadingChapter}
-            onProcessEbook={() => {
-              if (!apiKey) {
-                toast.error(t('chapters.apiKeyRequired'), {
-                  duration: 3000,
-                  position: 'top-center',
-                })
-                return
-              }
-              processEbook()
-            }}
-            onCustomPromptChange={setCustomPrompt}
-            t={t}
-          />
+          <div className='min-h-[80vh] space-y-4'>
+            {/* 步骤1: 文件上传和配置 */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Upload className="h-5 w-5" />
+                  {t('upload.title')}
+                </CardTitle>
+                <CardDescription>
+                  {t('upload.description')}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="file">{t('upload.selectFile')}</Label>
+                  <Input
+                    id="file"
+                    type="file"
+                    accept=".epub,.pdf"
+                    onChange={handleFileChange}
+                    disabled={processing}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <FileText className="h-4 w-4" />
+                    {t('upload.selectedFile')}: {file?.name || t('upload.noFileSelected')}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <ConfigDialog processing={processing} file={file} />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={clearBookCache}
+                      disabled={!file || processing}
+                      className="flex items-center gap-1 text-red-500 hover:text-red-700 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      {t('upload.clearCache')}
+                    </Button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Button
+                    onClick={extractChapters}
+                    disabled={!file || extractingChapters || processing}
+                    className="w-full"
+                  >
+                    {extractingChapters ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {t('upload.extractingChapters')}
+                      </>
+                    ) : (
+                      <>
+                        <List className="mr-2 h-4 w-4" />
+                        {t('upload.extractChapters')}
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+            {/* 章节信息 */}
+            {extractedChapters && bookData && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <List className="h-5 w-5" />
+                    {t('chapters.title')}
+                  </CardTitle>
+                  <CardDescription>
+                    {bookData.title} - {bookData.author} | {t('chapters.totalChapters', { count: extractedChapters.length })}，{t('chapters.selectedChapters', { count: selectedChapters.size })}
+                  </CardDescription>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Checkbox
+                      id="select-all"
+                      checked={selectedChapters.size === extractedChapters.length}
+                      onCheckedChange={(checked) => handleSelectAll(checked as boolean)}
+                    />
+                    <Label htmlFor="select-all" className="text-sm font-medium">
+                      {t('chapters.selectAll')}
+                    </Label>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {extractedChapters.map((chapter) => (
+                      <Label
+                        key={chapter.id}
+                        htmlFor={`chapter-${chapter.id}`}
+                        className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+                      >
+                        <Checkbox
+                          id={`chapter-${chapter.id}`}
+                          checked={selectedChapters.has(chapter.id)}
+                          onCheckedChange={(checked) => handleChapterSelect(chapter.id, checked as boolean)}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div
+                            className="text-sm truncate block"
+                            title={chapter.title}
+                          >
+                            {chapter.title}
+                          </div>
+                          <span className="text-xs text-gray-500">
+                            {getStringSizeInKB(chapter.content)} KB
+                          </span>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setCurrentReadingChapter(chapter)
+                          }}
+                        >
+                          <BookOpen className="h-3 w-3" />
+                        </Button>
+                      </Label>
+                    ))}
+                  </div>
+
+                  {/* 自定义提示词输入框 */}
+                  <div className="space-y-2">
+                    <Label htmlFor="custom-prompt" className="text-sm font-medium">
+                      {t('chapters.customPrompt')}
+                    </Label>
+                    <Textarea
+                      id="custom-prompt"
+                      placeholder={t('chapters.customPromptPlaceholder')}
+                      value={customPrompt}
+                      onChange={(e) => setCustomPrompt(e.target.value)}
+                      className="min-h-20 resize-none"
+                      disabled={processing || extractingChapters}
+                    />
+                    <p className="text-xs text-gray-500">
+                      {t('chapters.customPromptDescription')}
+                    </p>
+                  </div>
+
+                  <Button
+                    onClick={() => {
+                      if (!apiKey) {
+                        toast.error(t('chapters.apiKeyRequired'), {
+                          duration: 3000,
+                          position: 'top-center',
+                        })
+                        return
+                      }
+                      processEbook()
+                    }}
+                    disabled={!extractedChapters || processing || extractingChapters || selectedChapters.size === 0}
+                    className="w-full"
+                  >
+                    {processing ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {t('chapters.processing')}
+                      </>
+                    ) : (
+                      <>
+                        <Brain className="mr-2 h-4 w-4" />
+                        {t('chapters.startProcessing')}
+                      </>
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         ) : (
-          <Step2Results
-            processing={processing}
-            extractingChapters={extractingChapters}
-            progress={progress}
-            currentStep={currentStep}
-            error={error}
-            bookSummary={bookSummary}
-            bookMindMap={bookMindMap}
-            bookData={bookData}
-            processingMode={processingMode}
-            extractedChapters={extractedChapters}
-            options={options}
-            onBackToConfig={() => { 
-              // 取消所有正在进行的请求
-              if (abortControllerRef.current) {
-                abortControllerRef.current.abort()
-                abortControllerRef.current = null
-              }
-              
-              setCurrentStepIndex(1);
-              setProcessing(false);
-              setExtractingChapters(false);
-              setProgress(0);
-              setCurrentStep('');
-              setError(null);
-            }}
-            onClearChapterCache={clearChapterCache}
-            onClearSpecificCache={clearSpecificCache}
-            onDownloadAllMarkdown={downloadAllMarkdown}
-            onSetCurrentReadingChapter={setCurrentReadingChapter}
-            t={t}
-          />
+          <div className='min-h-[80vh] space-y-4'>
+            {/* 步骤2: 处理过程和结果显示 */}
+            <div className="flex items-center gap-4 mb-4">
+              <Button
+                variant="outline"
+                onClick={() => { 
+                  // 取消所有正在进行的请求
+                  if (abortControllerRef.current) {
+                    abortControllerRef.current.abort()
+                    abortControllerRef.current = null
+                  }
+                  
+                  setCurrentStepIndex(1);
+                  setProcessing(false);
+                  setExtractingChapters(false);
+                  setProgress(0);
+                  setCurrentStep('');
+                  setError(null);
+                }}
+                className="flex items-center gap-2"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                {t('common.backToConfig')}
+              </Button>
+              <div className="text-lg font-medium text-gray-700 truncate">
+                {bookData ? `${bookData.title} - ${bookData.author}` : '处理中...'}
+              </div>
+            </div>
+            {/* 处理进度 */}
+            {(processing || extractingChapters || error) && (
+              <Card>
+                <CardContent>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center text-sm">
+                      <div className="flex items-center gap-2">
+                        {error ? (
+                          <span className="text-red-500 font-medium">Error: {error}</span>
+                        ) : (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            <span>{currentStep}</span>
+                          </>
+                        )}
+                      </div>
+                      <span>{error ? '' : `${Math.round(progress)}%`}</span>
+                    </div>
+                    <Progress value={error ? 0 : progress} className="w-full" />
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* 结果展示 */}
+            {(bookSummary || bookMindMap) && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    <div className="truncate flex-1 w-1">
+                      {processingMode === 'summary' ? (
+                        <><BookOpen className="h-5 w-5 inline-block mr-2" />{t('results.summaryTitle', { title: bookSummary?.title })}</>
+                      ) : processingMode === 'mindmap' ? (
+                        <><Network className="h-5 w-5 inline-block mr-2" />{t('results.chapterMindMapTitle', { title: bookMindMap?.title })}</>
+                      ) : (
+                        <><Network className="h-5 w-5 inline-block mr-2" />{t('results.wholeMindMapTitle', { title: bookMindMap?.title })}</>
+                      )}
+                    </div>
+                    {processingMode === 'summary' && bookSummary && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={downloadAllMarkdown}
+                        className="flex items-center gap-2"
+                      >
+                        <Download className="h-4 w-4" />
+                        {t('download.downloadAllMarkdown')}
+                      </Button>
+                    )}
+                  </CardTitle>
+                  <CardDescription>
+                    {t('results.author', { author: bookSummary?.author || bookMindMap?.author })} | {t('results.chapterCount', { count: bookSummary?.chapters.length || bookMindMap?.chapters.length })}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {processingMode === 'summary' && bookSummary ? (
+                    <Tabs defaultValue="chapters" className="w-full">
+                      <TabsList className="grid w-full grid-cols-3">
+                        <TabsTrigger value="chapters">{t('results.tabs.chapterSummary')}</TabsTrigger>
+                        <TabsTrigger value="connections">{t('results.tabs.connections')}</TabsTrigger>
+                        <TabsTrigger value="overall">{t('results.tabs.overallSummary')}</TabsTrigger>
+                      </TabsList>
+
+                      <TabsContent value="chapters" className="grid grid-cols-1 gap-4">
+                        {bookSummary.chapters.map((chapter, index) => (
+                          <MarkdownCard
+                            key={chapter.id}
+                            id={chapter.id}
+                            title={chapter.title}
+                            content={chapter.content}
+                            markdownContent={chapter.summary || ''}
+                            index={index}
+                            defaultCollapsed={index > 0}
+                            onClearCache={clearChapterCache}
+                            isLoading={chapter.isLoading}
+                            onReadChapter={() => {
+                              // 根据章节ID找到对应的ChapterData
+                              const chapterData = extractedChapters?.find(ch => ch.id === chapter.id)
+                              if (chapterData) {
+                                setCurrentReadingChapter(chapterData)
+                              }
+                            }}
+                          />
+                        ))}
+                      </TabsContent>
+
+                      <TabsContent value="connections">
+                        <MarkdownCard
+                          id="connections"
+                          title={t('results.tabs.connections')}
+                          content={bookSummary.connections}
+                          markdownContent={bookSummary.connections}
+                          index={0}
+                          showClearCache={true}
+                          showViewContent={false}
+                          showCopyButton={true}
+                          onClearCache={() => clearSpecificCache('connections')}
+                        />
+                      </TabsContent>
+
+                      <TabsContent value="overall">
+                        <MarkdownCard
+                          id="overall"
+                          title={t('results.tabs.overallSummary')}
+                          content={bookSummary.overallSummary}
+                          markdownContent={bookSummary.overallSummary}
+                          index={0}
+                          showClearCache={true}
+                          showViewContent={false}
+                          showCopyButton={true}
+                          onClearCache={() => clearSpecificCache('overall_summary')}
+                        />
+                      </TabsContent>
+                    </Tabs>
+                  ) : processingMode === 'mindmap' && bookMindMap ? (
+                    <Tabs defaultValue="chapters" className="w-full">
+                      <TabsList className="grid w-full grid-cols-2">
+                        <TabsTrigger value="chapters">{t('results.tabs.chapterMindMaps')}</TabsTrigger>
+                        <TabsTrigger value="combined">{t('results.tabs.combinedMindMap')}</TabsTrigger>
+                      </TabsList>
+
+                      <TabsContent value="chapters" className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {bookMindMap.chapters.map((chapter, index) => {
+                          return (
+                            <MindMapCard
+                              key={chapter.id}
+                              id={chapter.id}
+                              title={chapter.title}
+                              isLoading={chapter.isLoading}
+                              content={chapter.content}
+                              mindMapData={chapter.mindMap || { nodeData: { topic: '', id: '', children: [] } }}
+                              index={index}
+                              showCopyButton={false}
+                              onClearCache={clearChapterCache}
+                              onOpenInMindElixir={openInMindElixir}
+                              onDownloadMindMap={downloadMindMap}
+                              onReadChapter={() => {
+                                // 根据章节ID找到对应的ChapterData
+                                const chapterData = extractedChapters?.find(ch => ch.id === chapter.id)
+                                if (chapterData) {
+                                  setCurrentReadingChapter(chapterData)
+                                }
+                              }}
+                              mindElixirOptions={options}
+                            />
+                          )
+                        })}
+                      </TabsContent>
+
+                      <TabsContent value="combined">
+                        {bookMindMap.combinedMindMap ? (
+                          <MindMapCard
+                            id="combined"
+                            title={t('results.tabs.combinedMindMap')}
+                            content=""
+                            mindMapData={bookMindMap.combinedMindMap}
+                            index={0}
+                            onOpenInMindElixir={(mindmapData) => openInMindElixir(mindmapData, t('results.combinedMindMapTitle', { title: bookMindMap.title }))}
+                            onDownloadMindMap={downloadMindMap}
+                            onClearCache={() => clearSpecificCache('merged_mindmap')}
+                            showClearCache={true}
+                            showViewContent={false}
+                            showCopyButton={false}
+                            mindMapClassName="w-full h-[600px] mx-auto"
+                            mindElixirOptions={options}
+                          />
+                        ) : (
+                          <Card>
+                            <CardContent>
+                              <div className="text-center text-gray-500 py-8">
+                                {t('results.generatingMindMap')}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        )}
+                      </TabsContent>
+                    </Tabs>
+                  ) : processingMode === 'combined-mindmap' && bookMindMap ? (
+                    bookMindMap.combinedMindMap ? (
+                      <MindMapCard
+                        id="whole-book"
+                        title={t('results.tabs.combinedMindMap')}
+                        content=""
+                        mindMapData={bookMindMap.combinedMindMap}
+                        index={0}
+                        onOpenInMindElixir={(mindmapData) => openInMindElixir(mindmapData, t('results.combinedMindMapTitle', { title: bookMindMap.title }))}
+                        onDownloadMindMap={downloadMindMap}
+                        onClearCache={() => clearSpecificCache('combined_mindmap')}
+                        showClearCache={true}
+                        showViewContent={false}
+                        showCopyButton={false}
+                        mindMapClassName="w-full h-[600px] mx-auto"
+                        mindElixirOptions={options}
+                      />
+                    ) : (
+                      <Card>
+                        <CardContent>
+                          <div className="text-center text-gray-500 py-8">
+                            {t('results.generatingMindMap')}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )
+                  ) : null}
+                </CardContent>
+              </Card>
+            )}
+          </div>
         )}
+
+        <p className="text-gray-600 text-center pb-4">
+          Mindmap powered by{' '}
+          <a
+            href="https://mind-elixir.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:text-blue-800 hover:underline"
+          >
+            MindElixir
+          </a>
+        </p>
       </div>
 
       {/* 阅读组件插入到这里 */}
