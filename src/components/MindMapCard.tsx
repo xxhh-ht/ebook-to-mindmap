@@ -71,7 +71,7 @@ export const MindMapCard: React.FC<MindMapCardProps> = ({
   showReadButton = true,
   className = '',
   mindMapClassName = 'aspect-square w-full max-w-[500px] mx-auto',
-  mindElixirOptions = { direction: 1, alignment: 'nodes' },
+  mindElixirOptions = { direction: 1, alignment: 'nodes', editable:false },
   isLoading = false,
 }) => {
   const { t } = useTranslation()
@@ -85,10 +85,7 @@ export const MindMapCard: React.FC<MindMapCardProps> = ({
             {title}
           </div>
           {isLoading ? (
-            <div className="flex items-center gap-2 mt-2 text-sm text-gray-500">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span>{t('common.processing')}</span>
-            </div>
+              null
           ) : (
             <div className="flex items-center gap-2 mt-2">
               {showOpenInMindElixir && onOpenInMindElixir && (
@@ -148,7 +145,7 @@ export const MindMapCard: React.FC<MindMapCardProps> = ({
             <p>{t('common.generatingMindMap')}</p>
           </div>
         ) : (
-          <div className="border rounded-lg">
+          <div className="border rounded-lg overflow-hidden">
             <MindElixirReact
               ref={localMindElixirRef}
               data={mindMapData}

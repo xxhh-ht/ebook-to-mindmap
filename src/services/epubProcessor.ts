@@ -1,5 +1,6 @@
 import ePub, { Book, type NavItem } from '@ssshooter/epubjs'
 import { SKIP_CHAPTER_KEYWORDS } from './constants'
+import { htmlToMarkdown } from '../utils/htmlToMarkdown'
 import type Section from '@ssshooter/epubjs/types/section'
 
 
@@ -46,7 +47,7 @@ export class EpubProcessor {
     }
   }
 
-  async extractChapters(book: Book, useSmartDetection: boolean = false, skipNonEssentialChapters: boolean = true, maxSubChapterDepth: number = 0, forceUseSpine: boolean = false): Promise<ChapterData[]> {
+  async extractChapters(book: Book, skipNonEssentialChapters: boolean = true, maxSubChapterDepth: number = 0, forceUseSpine: boolean = false): Promise<ChapterData[]> {
     try {
       const chapters: ChapterData[] = []
 
@@ -104,7 +105,7 @@ export class EpubProcessor {
               // 如果从HTML中提取到了h2标题，优先使用；否则保留原标题
               const finalTitle = extractedTitle || chapterInfo.title
               chapters.push({
-                id: `chapter-${chapters.length + 1}`,
+                id: finalTitle + chapterInfo.href, // 使用href而不是title作为ID，确保唯一性
                 title: finalTitle,
                 content: chapterContent,
                 href: chapterInfo.href,
@@ -118,10 +119,7 @@ export class EpubProcessor {
         console.warn(`⚠️ [DEBUG] 无法获取EPUB目录:`, tocError)
       }
       // 应用智能章节检测
-      const finalChapters = this.detectChapters(chapters, useSmartDetection)
-      console.log(`📊 [DEBUG] 最终提取到 ${finalChapters.length} 个章节`)
-
-      return finalChapters
+      return chapters
     } catch (error) {
       console.error(`❌ [DEBUG] 提取章节失败:`, error)
       throw new Error(`提取章节失败: ${error instanceof Error ? error.message : '未知错误'}`)
@@ -276,12 +274,10 @@ export class EpubProcessor {
       const scripts = body.querySelectorAll('script, style')
       scripts.forEach(el => el.remove())
 
-      // 获取纯文本内容
-      let textContent = body.textContent || ''
+      // 获取Markdown内容
+      let textContent = htmlToMarkdown(body.innerHTML)
 
-      textContent = textContent.trim()
-
-      console.log(`✨ [DEBUG] 清理后文本长度: ${textContent.length}`)
+      console.log(`✨ [DEBUG] 转换Markdown后文本长度: ${textContent.length}`)
 
       return { title, textContent }
     } catch (error) {
@@ -362,94 +358,5 @@ export class EpubProcessor {
       console.warn(`❌ [DEBUG] 获取章节HTML失败 (href: ${href}):`, error)
       return ''
     }
-  }
-
-  private detectChapters(chapters: ChapterData[], useSmartDetection: boolean): ChapterData[] {
-    if (!useSmartDetection) {
-      return chapters
-    }
-
-    console.log(`🧠 [DEBUG] 启用EPUB智能章节检测，原始章节数: ${chapters.length}`)
-
-    const chapterPatterns = [
-      /^第[一二三四五六七八九十\d]+章[\s\S]*$/m,
-      /^Chapter\s+\d+[\s\S]*$/mi,
-      /^第[一二三四五六七八九十\d]+节[\s\S]*$/m,
-      /^\d+\.[\s\S]*$/m,
-      /^[一二三四五六七八九十]、[\s\S]*$/m
-    ]
-
-    const detectedChapters: ChapterData[] = []
-    let currentChapter: ChapterData | null = null
-    let chapterCount = 0
-
-    for (const chapter of chapters) {
-      const content = chapter.content.trim()
-      if (content.length < 100) continue // 跳过内容太少的章节
-
-      // 检查是否是新章节的开始
-      let isNewChapter = false
-      let chapterTitle = chapter.title
-
-      // 如果原标题不明确，尝试从内容中提取
-      if (!chapterTitle || chapterTitle.includes('章节') || chapterTitle.includes('Chapter')) {
-        for (const pattern of chapterPatterns) {
-          const match = content.match(pattern)
-          if (match) {
-            // 提取章节标题（取前100个字符作为标题）
-            const titleMatch = content.match(/^(.{1,100})/)
-            chapterTitle = titleMatch ? titleMatch[1].trim() : `章节 ${chapterCount + 1}`
-            isNewChapter = true
-            break
-          }
-        }
-      }
-
-      if (isNewChapter || !currentChapter) {
-        // 保存上一个章节
-        if (currentChapter && currentChapter.content.trim().length > 200) {
-          detectedChapters.push({
-            id: currentChapter.id,
-            title: currentChapter.title,
-            content: currentChapter.content.trim(),
-            href: currentChapter.href,
-            tocItem: currentChapter.tocItem,
-            depth: currentChapter.depth
-          })
-        }
-
-        // 开始新章节
-        chapterCount++
-        currentChapter = {
-          id: chapter.id || `chapter-${chapterCount}`,
-          title: chapterTitle || `第 ${chapterCount} 章`,
-          content: content,
-          href: chapter.href,
-          tocItem: chapter.tocItem,
-          depth: chapter.depth
-        }
-
-        console.log(`📖 [DEBUG] 检测到新章节: "${chapterTitle}"`)
-      } else {
-        // 合并到当前章节
-        currentChapter.content += '\n\n' + content
-      }
-    }
-
-    // 保存最后一个章节
-    if (currentChapter && currentChapter.content.trim().length > 200) {
-      detectedChapters.push({
-        id: currentChapter.id,
-        title: currentChapter.title,
-        content: currentChapter.content.trim(),
-        href: currentChapter.href,
-        tocItem: currentChapter.tocItem,
-        depth: currentChapter.depth
-      })
-    }
-
-    console.log(`🔍 [DEBUG] EPUB章节检测完成，找到 ${detectedChapters.length} 个章节`)
-
-    return detectedChapters.length > 0 ? detectedChapters : chapters
   }
 }

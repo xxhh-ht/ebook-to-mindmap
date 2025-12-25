@@ -1,15 +1,16 @@
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Settings, ExternalLink, Download, Upload } from 'lucide-react'
-import { toast } from 'sonner'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Settings, Brain } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { useConfigStore, useAIConfig, useProcessingOptions } from '../../stores/configStore'
+import { useConfigStore, useProcessingOptions } from '../../stores/configStore'
+import { useModelStore } from '../../stores/modelStore'
 import type { SupportedLanguage } from '../../services/prompts/utils'
+import { useState, useEffect, useEffectEvent } from 'react'
 
 interface ConfigDialogProps {
   processing: boolean
@@ -18,120 +19,68 @@ interface ConfigDialogProps {
 
 export function ConfigDialog({ processing }: ConfigDialogProps) {
   const { t } = useTranslation()
-  // 使用zustand store管理配置
-  const aiConfig = useAIConfig()
   const processingOptions = useProcessingOptions()
+  const { models, getDefaultModel } = useModelStore()
   const {
-    setAiProvider,
-    setApiKey,
-    setApiUrl,
-    setModel,
-    setTemperature,
     setProcessingMode,
     setBookType,
     setSkipNonEssentialChapters,
     setOutputLanguage,
-    setForceUseSpine
+    setForceUseSpine,
+    setAiProvider,
+    setApiKey,
+    setApiUrl,
+    setModel,
+    setTemperature
   } = useConfigStore()
 
-  // 从store中解构状态值
-  const { provider: aiProvider, apiKey, apiUrl, model, temperature } = aiConfig
   const { processingMode, bookType, skipNonEssentialChapters, outputLanguage, forceUseSpine } = processingOptions
 
-  // 导出配置
-  const handleExportConfig = () => {
-    const config = {
-      aiConfig,
-      processingOptions
+  const [selectedModelId, setSelectedModelId] = useState<string>('')
+
+  const selectedModel = models.find(m => m.id === selectedModelId)
+
+  const handleModelChange = (id: string) => {
+    setSelectedModelId(id)
+    const model = models.find(m => m.id === id)
+    if (model) {
+      setAiProvider(model.provider)
+      setApiKey(model.apiKey)
+      setApiUrl(model.apiUrl)
+      setModel(model.model)
+      setTemperature(model.temperature)
     }
-    const dataStr = JSON.stringify(config, null, 2)
-    const dataBlob = new Blob([dataStr], { type: 'application/json' })
-    const url = URL.createObjectURL(dataBlob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `ebook-mindmap-config-${new Date().toISOString().split('T')[0]}.json`
-    link.click()
-    URL.revokeObjectURL(url)
-    toast.success(t('config.exportSuccess'))
   }
 
-  // 导入配置
-  const handleImportConfig = () => {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = 'application/json'
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0]
-      if (!file) return
-
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        try {
-          const config = JSON.parse(event.target?.result as string)
-          
-          // 验证配置结构
-          if (!config.aiConfig || !config.processingOptions) {
-            toast.error(t('config.importError'))
-            return
-          }
-
-          // 使用统一的导入方法
-          useConfigStore.getState().importConfig(config)
-          toast.success(t('config.importSuccess'))
-        } catch (error) {
-          console.error('Failed to import config:', error)
-          toast.error(t('config.importError'))
-        }
-      }
-      reader.readAsText(file)
+  const onInit = useEffectEvent(() => {
+    const defaultModel = getDefaultModel()
+    if (defaultModel && !selectedModelId) {
+      handleModelChange(defaultModel.id)
     }
-    input.click()
-  }
+  });
 
-  const providerSettings = {
-    gemini: {
-      apiKeyLabel: 'Gemini API Key',
-      apiKeyPlaceholder: t('config.enterGeminiApiKey'),
-      modelPlaceholder: t('config.geminiModelPlaceholder'),
-      apiUrlPlaceholder: '', // Gemini does not use a separate API URL input in this UI
-      url: 'https://aistudio.google.com/',
-    },
-    openai: {
-      apiKeyLabel: 'API Token',
-      apiKeyPlaceholder: t('config.enterApiToken'),
-      apiUrlPlaceholder: 'https://api.openai.com/v1',
-      modelPlaceholder: t('config.modelPlaceholder'),
-      url: 'https://platform.openai.com/',
-    },
-    ollama: {
-      apiKeyLabel: 'API Token',
-      apiKeyPlaceholder: 'API Token',
-      apiUrlPlaceholder: 'http://localhost:11434',
-      modelPlaceholder: 'llama2, mistral, codellama...',
-      url: 'https://ollama.com/',
-    },
-    '302.ai': {
-      apiKeyLabel: 'API Token',
-      apiKeyPlaceholder: t('config.enterApiToken'),
-      apiUrlPlaceholder: 'https://api.302.ai/v1',
-      modelPlaceholder: t('config.modelPlaceholder'),
-      url: 'https://share.302.ai/BJ7iSL',
-    },
-  }
+  useEffect(() => {
+    onInit()
+  }, [])
 
   return (
     <Dialog>
-      <DialogTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={processing}
-          className="flex items-center gap-1"
-        >
-          <Settings className="h-3.5 w-3.5" />
-          {t('config.title')}
-        </Button>
-      </DialogTrigger>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DialogTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={processing}
+            >
+              <Settings className="h-3.5 w-3.5" />
+            </Button>
+          </DialogTrigger>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>{t('config.title')}</p>
+        </TooltipContent>
+      </Tooltip>
       <DialogContent className="max-w-2xl max-h-[80vh]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -144,137 +93,45 @@ export function ConfigDialog({ processing }: ConfigDialogProps) {
         </DialogHeader>
         <ScrollArea className="max-h-[60vh] pr-4">
           <div className="space-y-4">
-            {/* AI 服务配置 */}
-            <div className="space-y-4 p-4 bg-gray-50 rounded-lg border">
-              <div className="flex items-center gap-2 mb-3">
-                <Settings className="h-4 w-4" />
-                <Label className="text-sm font-medium">{t('config.aiServiceConfig')}</Label>
+            {/* Model Selection */}
+            <div className="space-y-3 p-4 bg-gray-50 rounded-lg border">
+              <div className="flex items-center gap-2 mb-2">
+                <Brain className="h-4 w-4" />
+                <Label className="text-sm font-medium">{t('models.selectModel')}</Label>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="ai-provider">{t('config.aiProvider')}</Label>
-                  <div className="flex flex-col items-start gap-2">
-                    <Select
-                      value={aiProvider}
-                      onValueChange={(value: 'gemini' | 'openai' | 'ollama' | '302.ai') => {
-                        setAiProvider(value)
-                        if (value === '302.ai') {
-                          setApiUrl('https://api.302.ai/v1')
-                        }
-                      }}
-                      disabled={processing}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder={t('config.selectAiProvider')} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="gemini">Google Gemini</SelectItem>
-                        <SelectItem value="openai">{t('config.openaiCompatible')}</SelectItem>
-                        <SelectItem value="ollama">Ollama</SelectItem>
-                        <SelectItem value="302.ai">302.AI</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button variant="link" className="p-0 h-auto text-xs shrink-0" asChild>
-                      <a href={providerSettings[aiProvider].url} target="_blank" rel="noopener noreferrer">
-                        {t('config.visitSite')}
-                        <ExternalLink className="h-3 w-3 ml-1" />
-                      </a>
-                    </Button>
-                  </div>
+              {models.length === 0 ? (
+                <div className="text-sm text-gray-600 py-2">
+                  {t('models.noModelsConfigured')}
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="apikey">
-                    {providerSettings[aiProvider].apiKeyLabel}
-                  </Label>
-                  <Input
-                    id="apikey"
-                    type="password"
-                    placeholder={providerSettings[aiProvider].apiKeyPlaceholder}
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    disabled={processing}
-                  />
-                </div>
-              </div>
-
-              {(aiProvider === 'openai' || aiProvider === 'ollama' || aiProvider === '302.ai') && (
-                <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="api-url">{t('config.apiUrl')}</Label>
-                      <Input
-                        id="api-url"
-                        type="url"
-                        placeholder={providerSettings[aiProvider].apiUrlPlaceholder}
-                        value={apiUrl}
-                        onChange={(e) => setApiUrl(e.target.value)}
-                        disabled={processing || aiProvider === '302.ai'}
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="model">{t('config.modelName')}</Label>
-                      <Input
-                        id="model"
-                        type="text"
-                        placeholder={providerSettings[aiProvider].modelPlaceholder}
-                        value={model}
-                        onChange={(e) => setModel(e.target.value)}
-                        disabled={processing}
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="openai-temperature">{t('config.temperature')}</Label>
-                    <Input
-                      id="openai-temperature"
-                      type="number"
-                      min="0"
-                      max="2"
-                      step="0.1"
-                      placeholder="0.7"
-                      value={temperature}
-                      onChange={(e) => setTemperature(parseFloat(e.target.value))}
-                      disabled={processing}
-                    />
-                    <p className="text-xs text-gray-600">
-                      {t('config.temperatureDescription')}
-                    </p>
-                  </div>
-                </>
+              ) : (
+                <Select
+                  value={selectedModelId}
+                  onValueChange={handleModelChange}
+                  disabled={processing}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('models.selectModelPlaceholder')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {models.map((model) => (
+                      <SelectItem key={model.id} value={model.id}>
+                        {model.name} {model.isDefault && '⭐'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               )}
 
-              {aiProvider === 'gemini' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="gemini-model">{t('config.modelName')}</Label>
-                    <Input
-                      id="gemini-model"
-                      type="text"
-                      placeholder={providerSettings.gemini.modelPlaceholder}
-                      value={model}
-                      onChange={(e) => setModel(e.target.value)}
-                      disabled={processing}
-                    />
+              {selectedModel && (
+                <div className="text-xs text-gray-600 mt-2 space-y-1">
+                  <div>
+                    <span className="font-medium">{t('config.aiProvider')}:</span>{' '}
+                    {selectedModel.provider}
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="gemini-temperature">{t('config.temperature')}</Label>
-                    <Input
-                      id="gemini-temperature"
-                      type="number"
-                      min="0"
-                      max="2"
-                      step="0.1"
-                      placeholder="0.7"
-                      value={temperature}
-                      onChange={(e) => setTemperature(parseFloat(e.target.value) || 0.7)}
-                      disabled={processing}
-                    />
-                    <p className="text-xs text-gray-600">
-                      {t('config.temperatureDescription')}
-                    </p>
+                  <div>
+                    <span className="font-medium">{t('config.modelName')}:</span>{' '}
+                    {selectedModel.model}
                   </div>
                 </div>
               )}
@@ -410,45 +267,10 @@ export function ConfigDialog({ processing }: ConfigDialogProps) {
               </div>
             </div>
 
-            {/* <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border">
-              <div className="space-y-1">
-                <Label htmlFor="smart-detection" className="text-sm font-medium">
-                  {t('config.smartChapterDetection')}
-                </Label>
-                <p className="text-xs text-gray-600">
-                  {t('config.smartChapterDetectionDescription')}
-                </p>
-              </div>
-              <Switch
-                id="smart-detection"
-                checked={useSmartDetection}
-                onCheckedChange={setUseSmartDetection}
-                disabled={processing}
-              />
-            </div> */}
+
 
           </div>
         </ScrollArea>
-        <DialogFooter className="flex-row justify-end gap-2">
-          <Button
-            variant="outline"
-            onClick={handleImportConfig}
-            disabled={processing}
-            className="flex items-center gap-2"
-          >
-            <Upload className="h-4 w-4" />
-            {t('config.importConfig')}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={handleExportConfig}
-            disabled={processing}
-            className="flex items-center gap-2"
-          >
-            <Download className="h-4 w-4" />
-            {t('config.exportConfig')}
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   )
